@@ -8,12 +8,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params
   const { draftId, body } = await req.json()
 
+  if (!draftId) return NextResponse.json({ error: 'draftId is required' }, { status: 400 })
+  if (!body || typeof body !== 'string' || body.trim().length === 0) {
+    return NextResponse.json({ error: 'Reply body cannot be empty' }, { status: 400 })
+  }
+
   const [post] = await db
     .select()
     .from(redditPosts)
     .where(eq(redditPosts.id, id))
 
   if (!post) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+
+  // Prevent double-posting
+  if (post.status === 'posted') {
+    return NextResponse.json({ error: 'This post has already been replied to' }, { status: 409 })
+  }
 
   const token = await getToken()
   if (!token) return NextResponse.json({ error: 'Reddit not connected' }, { status: 401 })

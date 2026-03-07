@@ -122,6 +122,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {scanning && (
+        <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-700 flex items-center gap-2">
+          <RefreshCw size={14} className="animate-spin shrink-0" />
+          Scanning Reddit for relevant posts… this can take up to 60 seconds.
+        </div>
+      )}
+
       {scanError && (
         <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">
           Scan error: {scanError}

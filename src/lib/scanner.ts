@@ -1,6 +1,6 @@
 import { db } from '@/db'
 import { products, redditPosts, scanLogs, appSettings } from '@/db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { getToken } from './reddit-auth'
 import { scorePostRelevance } from './ai'
 import { sendNewPostsNotification } from './notify'
@@ -28,10 +28,13 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+const MAX_RETRIES = 3
+
 async function searchReddit(
   token: string,
   keyword: string,
-  subreddit: string | null
+  subreddit: string | null,
+  attempt = 1
 ): Promise<RedditPostData[]> {
   const cutoff = Math.floor(Date.now() / 1000) - DAYS_BACK * 86400
 
@@ -50,10 +53,13 @@ async function searchReddit(
   })
 
   if (res.status === 429) {
-    const retryAfter = parseInt(res.headers.get('retry-after') ?? '60', 10)
-    console.log(`[scanner] Rate limited. Waiting ${retryAfter}s...`)
+    if (attempt >= MAX_RETRIES) {
+      throw new Error(`Reddit rate limit exceeded after ${MAX_RETRIES} retries`)
+    }
+    const retryAfter = Math.min(parseInt(res.headers.get('retry-after') ?? '60', 10), 120)
+    console.log(`[scanner] Rate limited. Waiting ${retryAfter}s... (attempt ${attempt}/${MAX_RETRIES})`)
     await sleep(retryAfter * 1000)
-    return searchReddit(token, keyword, subreddit)
+    return searchReddit(token, keyword, subreddit, attempt + 1)
   }
 
   if (!res.ok) {
@@ -66,7 +72,20 @@ async function searchReddit(
     .filter((p: RedditPostData) => p.created_utc > cutoff)
 }
 
+export async function cleanupStaleScanLogs() {
+  // Mark any scan that's been 'running' for more than 10 minutes as failed
+  // (handles server restarts mid-scan)
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+  await db
+    .update(scanLogs)
+    .set({ status: 'failed', errorMessage: 'Scan interrupted (server restart)', completedAt: new Date().toISOString() })
+    .where(and(eq(scanLogs.status, 'running'), sql`started_at < ${tenMinutesAgo}`))
+}
+
 export async function runScan(triggeredBy: 'manual' | 'scheduled' = 'manual') {
+  // Clean up any orphaned running scans before checking
+  await cleanupStaleScanLogs()
+
   // Check if a scan is already running
   const running = await db
     .select()

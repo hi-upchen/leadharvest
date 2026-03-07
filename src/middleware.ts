@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
+
+  // Public routes: login page, auth callbacks, and cron endpoint (uses its own secret auth)
   const isPublic =
     pathname.startsWith('/login') ||
-    pathname.startsWith('/api/auth')
+    pathname.startsWith('/api/auth') ||
+    pathname.startsWith('/api/cron')
 
   const session = req.cookies.get('rmm_session')?.value
 

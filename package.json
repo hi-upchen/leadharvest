@@ -14,12 +14,10 @@
   "dependencies": {
     "@base-ui/react": "^1.2.0",
     "@google/generative-ai": "^0.24.1",
-    "@types/crypto-js": "^4.2.2",
     "@types/node-cron": "^3.0.11",
     "better-sqlite3": "^12.6.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "crypto-js": "^4.2.0",
     "drizzle-kit": "^0.31.9",
     "drizzle-orm": "^0.45.1",
     "lucide-react": "^0.577.0",
