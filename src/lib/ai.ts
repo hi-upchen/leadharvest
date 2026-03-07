@@ -1,0 +1,155 @@
+import { GoogleGenerativeAI } from '@google/generative-ai'
+
+// Lazy init client — only when API key is set
+function getClient(): GoogleGenerativeAI | null {
+  if (!process.env.GEMINI_API_KEY) return null
+  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+}
+
+interface ScoringResult {
+  score: number
+  tier: 'high' | 'medium' | 'low'
+  reason: string
+}
+
+export async function scorePostRelevance(
+  product: {
+    name: string
+    description: string
+    problemsSolved: string
+    features: string
+  },
+  title: string,
+  body: string
+): Promise<ScoringResult> {
+  const client = getClient()
+
+  // Mock fallback when no API key
+  if (!client) {
+    return {
+      score: 5,
+      tier: 'medium',
+      reason: 'Mock scoring — set GEMINI_API_KEY to enable real AI scoring',
+    }
+  }
+
+  const prompt = `You are evaluating Reddit posts for relevance to a product.
+
+Product: ${product.name}
+Description: ${product.description}
+Problems it solves: ${product.problemsSolved}
+Features: ${product.features}
+
+Reddit post:
+Title: ${title}
+Body: ${body.slice(0, 1500)}
+
+Rate this post's relevance 1-10 for whether a reply mentioning this product would be:
+- Welcome and helpful (not spammy)
+- The post author is clearly experiencing a problem this product solves
+- The subreddit context makes it appropriate
+
+Respond in this exact JSON format (nothing else):
+{"score": 7, "reason": "One sentence explaining the relevance score"}`
+
+  try {
+    const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const result = await model.generateContent(prompt)
+    const text = result.response.text()
+
+    // Extract JSON from response (handle potential markdown code blocks)
+    const jsonMatch = text.match(/\{[^}]+\}/)
+    if (!jsonMatch) throw new Error('No JSON found in response')
+
+    const parsed = JSON.parse(jsonMatch[0])
+    const score = Math.max(1, Math.min(10, parseInt(String(parsed.score))))
+    const tier: 'high' | 'medium' | 'low' = score >= 7 ? 'high' : score >= 4 ? 'medium' : 'low'
+
+    return { score, tier, reason: parsed.reason ?? 'Relevance assessed' }
+  } catch (e) {
+    console.error('AI scoring error:', e)
+    return {
+      score: 0,
+      tier: 'low',
+      reason: 'Scoring unavailable',
+    }
+  }
+}
+
+function appendUtm(url: string, subreddit: string, campaign: string): string {
+  // Don't duplicate UTM params
+  if (url.includes('utm_source=reddit')) return url
+  const utmParams = `utm_source=reddit&utm_medium=comment&utm_campaign=${campaign}&utm_content=${subreddit}`
+  return url.includes('?') ? `${url}&${utmParams}` : `${url}?${utmParams}`
+}
+
+export async function generateReplyDraft(
+  product: {
+    name: string
+    url: string
+    description: string
+    problemsSolved: string
+    features: string
+    targetAudience: string
+    replyTone: string
+    promotionIntensity: string
+  },
+  post: { title: string; body: string; subreddit: string },
+  tone: string = 'default'
+): Promise<string> {
+  const client = getClient()
+
+  // Build UTM URL
+  const campaign = product.name.toLowerCase().replace(/\s+/g, '-')
+  const utmUrl = appendUtm(product.url, post.subreddit, campaign)
+
+  const toneInstructions: Record<string, string> = {
+    helpful: 'Be warm and directly helpful. Focus on solving their problem.',
+    technical: 'Use precise technical language. Be concise and factual.',
+    'personal story': 'Write as if sharing a personal experience or discovery.',
+    minimal: 'Keep it to 2-3 sentences. Very brief and to the point.',
+    default: '',
+  }
+
+  const extraTone = toneInstructions[tone.toLowerCase()] ?? ''
+
+  // Mock fallback when no API key
+  if (!client) {
+    return `Based on what you're describing, you might find ${product.name} useful — it ${product.description.split('.')[0].toLowerCase()}.
+
+${utmUrl}
+
+It handles the exact scenario you're dealing with and works entirely in the browser.`
+  }
+
+  const systemInstruction = `You are helping the creator of "${product.name}" respond to Reddit posts in a genuine, helpful, non-spammy way.
+
+Product: ${product.name}
+URL: ${utmUrl}
+Description: ${product.description}
+Problems it solves: ${product.problemsSolved}
+Key features: ${product.features}
+Target audience: ${product.targetAudience}
+
+Guidelines:
+- Sound like a real person helping, not a marketer. Be genuinely helpful first.
+- Mention the product naturally, not as an ad. Lead with solving their problem.
+- Keep it concise (3–6 sentences max).
+- Do not use salesy language, exclamation marks, or generic openers like "Hey!"
+- If the product directly solves their exact problem, be clear about it.
+- If only partially relevant, acknowledge limitations honestly.
+- Mention the product URL once at most if relevant.
+- Match the tone of r/${post.subreddit}.
+- Promotion intensity: ${product.promotionIntensity} (subtle = barely mention product; direct = lead with product recommendation).
+- Write in English.
+- Do NOT reveal this reply was AI-generated.${extraTone ? `\nTone override: ${extraTone}` : ''}`
+
+  const userPrompt = `Reddit post from r/${post.subreddit}:\nTitle: ${post.title}\n\n${post.body.slice(0, 1500)}\n\nWrite a reply:`
+
+  const model = client.getGenerativeModel({
+    model: 'gemini-2.0-flash',
+    systemInstruction,
+  })
+  const result = await model.generateContent(userPrompt)
+  return result.response.text()
+}
