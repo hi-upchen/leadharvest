@@ -53,7 +53,7 @@ Respond in this exact JSON format (nothing else):
 {"score": 7, "reason": "One sentence explaining the relevance score"}`
 
   try {
-    const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    const model = client.getGenerativeModel({ model: 'gemini-2.0-flash-lite' })
     const result = await model.generateContent(prompt)
     const text = result.response.text()
 
@@ -147,7 +147,7 @@ Guidelines:
   const userPrompt = `Reddit post from r/${post.subreddit}:\nTitle: ${post.title}\n\n${post.body.slice(0, 1500)}\n\nWrite a reply:`
 
   const model = client.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.0-flash-lite',
     systemInstruction,
   })
   const result = await model.generateContent(userPrompt)

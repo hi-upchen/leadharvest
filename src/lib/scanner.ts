@@ -61,7 +61,13 @@ async function searchReddit(
     url = `${baseUrl}/search.json?q=${encodeURIComponent(keyword)}&sort=new&t=week&limit=25`
   }
 
-  const headers: Record<string, string> = { 'User-Agent': USER_AGENT }
+  const headers: Record<string, string> = {
+    'User-Agent': USER_AGENT,
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+  }
   if (oauthToken) headers['Authorization'] = `Bearer ${oauthToken}`
 
   const res = await fetch(url, { headers })
@@ -171,7 +177,9 @@ export async function runScan(triggeredBy: 'manual' | 'scheduled' = 'manual') {
 
         for (const sub of searchTargets) {
           try {
+            console.log(`[scanner] Searching "${keyword}" in r/${sub ?? 'all'}...`)
             const posts = await searchReddit(keyword, sub, daysBack, oauthToken)
+            console.log(`[scanner] Found ${posts.length} posts for "${keyword}" in r/${sub ?? 'all'}`)
             totalFound += posts.length
 
             for (const post of posts) {

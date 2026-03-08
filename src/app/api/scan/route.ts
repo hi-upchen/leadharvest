@@ -2,11 +2,11 @@ import { NextResponse } from 'next/server'
 import { runScan } from '@/lib/scanner'
 
 export async function POST() {
-  try {
-    const result = await runScan('manual')
-    return NextResponse.json(result)
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : 'Scan failed'
-    return NextResponse.json({ error: message }, { status: 500 })
-  }
+  // Fire-and-forget: start the scan in background, return immediately
+  // The scan takes 5-10 minutes — we can't hold the HTTP connection that long
+  runScan('manual').catch((e: unknown) => {
+    console.error('[scan] Background scan failed:', e instanceof Error ? e.message : e)
+  })
+
+  return NextResponse.json({ status: 'started' })
 }

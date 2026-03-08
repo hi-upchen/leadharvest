@@ -106,16 +106,41 @@ export default function DashboardPage() {
       const data = await res.json()
       if (!res.ok) {
         setScanError(data.error ?? 'Scan failed')
-      } else {
-        const now = new Date().toLocaleString()
-        setLastScanned(now)
-        loadPosts()
+        setScanning(false)
+        return
       }
+      // Scan started in background — poll until it completes
+      pollScanStatus()
     } catch {
       setScanError('Network error during scan')
-    } finally {
       setScanning(false)
     }
+  }
+
+  async function pollScanStatus() {
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/scan/history')
+        const logs = await res.json()
+        const latest = logs[0]
+        if (!latest) { setScanning(false); return }
+        if (latest.status === 'completed' || latest.status === 'failed') {
+          setScanning(false)
+          if (latest.status === 'completed') {
+            setLastScanned(new Date().toLocaleString())
+            loadPosts()
+          } else if (latest.errorMessage) {
+            setScanError(latest.errorMessage)
+          }
+        } else {
+          // Still running — check again in 5 seconds
+          setTimeout(poll, 5000)
+        }
+      } catch {
+        setScanning(false)
+      }
+    }
+    setTimeout(poll, 3000)
   }
 
   async function handleAction(id: string, status: string) {

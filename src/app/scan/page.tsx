@@ -55,12 +55,22 @@ export default function ScanPage() {
     try {
       const res = await fetch('/api/scan', { method: 'POST' })
       const data = await res.json()
-      if (!res.ok) setScanError(data.error ?? 'Scan failed')
-      else await loadData()
+      if (!res.ok) { setScanError(data.error ?? 'Scan failed'); setScanning(false); return }
+      // Poll until done
+      const poll = async () => {
+        await loadData()
+        const logs: ScanLog[] = await fetch('/api/scan/history').then(r => r.json())
+        const latest = logs[0]
+        if (!latest || latest.status === 'completed' || latest.status === 'failed') {
+          setScanning(false)
+          if (latest?.status === 'failed' && latest.errorMessage) setScanError(latest.errorMessage)
+        } else {
+          setTimeout(poll, 5000)
+        }
+      }
+      setTimeout(poll, 3000)
     } catch {
-      setScanError('Network error')
-    } finally {
-      setScanning(false)
+      setScanError('Network error'); setScanning(false)
     }
   }
 
