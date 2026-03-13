@@ -4,6 +4,33 @@ Personal tool to scan Reddit for posts relevant to your indie products, generate
 
 Built for indie hackers who want to find and engage with relevant Reddit discussions without spending hours browsing.
 
+## Screenshots
+
+### Post Queue
+Filter and review Reddit posts scored by AI relevance. One-click to draft a reply, bookmark, or skip.
+
+![Post Queue](docs/screenshots/queue.png)
+
+### Reply Editor
+Generate 3 AI reply variations, guide with custom prompts, edit freely, then approve or post to Reddit.
+
+![Reply Editor](docs/screenshots/reply.png)
+
+### Product Configuration
+Configure products with descriptions, features, target audience, tone, and promotion intensity — all fed to the AI.
+
+![Product Configuration](docs/screenshots/products.png)
+
+### Scan Settings
+Trigger manual scans, configure frequency and look-back window, view scan history.
+
+![Scan Settings](docs/screenshots/scan.png)
+
+### Analytics
+Track top subreddits, keywords, relevance distribution, and reply rate.
+
+![Analytics](docs/screenshots/analytics.png)
+
 ## Tech Stack
 
 - **Next.js 16** with Turbopack
