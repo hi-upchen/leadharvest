@@ -1,40 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/db'
-import { redditPosts, products } from '@/db/schema'
-import { eq, and, desc, like } from 'drizzle-orm'
+import { query } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const search = searchParams.get('q')
+  const rawSearch = searchParams.get('q') ?? ''
+  const search = rawSearch.slice(0, 200).replace(/[%_\\]/g, '\\$&') || null
   const status = searchParams.get('status')
   const productId = searchParams.get('productId')
   const subreddit = searchParams.get('subreddit')
 
-  const conditions = []
-  if (status) conditions.push(eq(redditPosts.status, status as 'new' | 'draft' | 'approved' | 'posted' | 'skipped' | 'bookmarked'))
-  if (productId) conditions.push(eq(redditPosts.productId, productId))
-  if (subreddit) conditions.push(eq(redditPosts.subreddit, subreddit))
-  // SQLite uses LIKE (case-insensitive by default for ASCII)
-  if (search) conditions.push(like(redditPosts.title, `%${search}%`))
+  const conditions: string[] = []
+  const values: (string | number)[] = []
 
-  const rows = await db
-    .select({
-      post: redditPosts,
-      product: { id: products.id, name: products.name },
-    })
-    .from(redditPosts)
-    .leftJoin(products, eq(redditPosts.productId, products.id))
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(redditPosts.fetchedAt))
-    .limit(200)
+  if (status) { conditions.push('rp.status = ?'); values.push(status) }
+  if (productId) { conditions.push('rp.product_id = ?'); values.push(productId) }
+  if (subreddit) { conditions.push('rp.subreddit = ?'); values.push(subreddit) }
+  if (search) { conditions.push('rp.title LIKE ?'); values.push(`%${search}%`) }
 
-  return NextResponse.json(
-    rows.map(r => ({
-      post: {
-        ...r.post,
-        matchedKeywords: JSON.parse(r.post.matchedKeywords as string),
-      },
-      product: r.product,
-    }))
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const rows = await query<{
+    id: string; reddit_post_id: string; product_id: string; subreddit: string
+    title: string; body: string; author: string; score: number; comment_count: number
+    url: string; matched_keywords: string; relevance_score: number; relevance_tier: string
+    relevance_reason: string; status: string; reddit_created_at: string; fetched_at: string
+    p_id: string; p_name: string
+  }>(
+    `SELECT rp.*, p.id as p_id, p.name as p_name
+     FROM reddit_posts rp LEFT JOIN products p ON rp.product_id = p.id
+     ${where}
+     ORDER BY rp.fetched_at DESC LIMIT 200`,
+    values
   )
+
+  return NextResponse.json(rows.map(r => ({
+    post: {
+      id: r.id, redditPostId: r.reddit_post_id, productId: r.product_id,
+      subreddit: r.subreddit, title: r.title, body: r.body, author: r.author,
+      score: r.score, commentCount: r.comment_count, url: r.url,
+      matchedKeywords: JSON.parse(r.matched_keywords),
+      relevanceScore: r.relevance_score, relevanceTier: r.relevance_tier,
+      relevanceReason: r.relevance_reason, status: r.status,
+      redditCreatedAt: r.reddit_created_at, fetchedAt: r.fetched_at,
+    },
+    product: r.p_id ? { id: r.p_id, name: r.p_name } : null,
+  })))
 }

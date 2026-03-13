@@ -1,26 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/db'
-import { redditPosts } from '@/db/schema'
-import { eq, and, gte, sql, count } from 'drizzle-orm'
+import { query } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const productId = searchParams.get('productId')
-  const days = parseInt(searchParams.get('days') ?? '30')
+  const VALID_DAYS = [7, 14, 30, 60, 90]
+  const rawDays = parseInt(searchParams.get('days') ?? '30')
+  const days = VALID_DAYS.includes(rawDays) ? rawDays : 30
   const since = new Date(Date.now() - days * 86400_000).toISOString()
 
-  const baseConditions = [gte(redditPosts.fetchedAt, since)]
-  if (productId) baseConditions.push(eq(redditPosts.productId, productId))
+  const conditions: string[] = ['fetched_at >= ?']
+  const values: (string | number)[] = [since]
+  if (productId) { conditions.push('product_id = ?'); values.push(productId) }
+  const where = `WHERE ${conditions.join(' AND ')}`
 
-  const allPostsForKeywords = await db
-    .select({ matchedKeywords: redditPosts.matchedKeywords })
-    .from(redditPosts)
-    .where(and(...baseConditions))
+  const [byTier, bySubreddit, totalRows, replyRateRows, keywordRows] = await Promise.all([
+    query<{ relevance_tier: string; count: number }>(
+      `SELECT relevance_tier, COUNT(*) as count FROM reddit_posts ${where} GROUP BY relevance_tier`, values
+    ),
+    query<{ subreddit: string; count: number }>(
+      `SELECT subreddit, COUNT(*) as count FROM reddit_posts ${where} GROUP BY subreddit ORDER BY count DESC LIMIT 10`, values
+    ),
+    query<{ count: number }>(`SELECT COUNT(*) as count FROM reddit_posts ${where}`, values),
+    query<{ status: string; count: number }>(
+      `SELECT status, COUNT(*) as count FROM reddit_posts ${where} AND relevance_tier = 'high' GROUP BY status`,
+      values
+    ),
+    query<{ matched_keywords: string }>(`SELECT matched_keywords FROM reddit_posts ${where}`, values),
+  ])
 
-  // Tally keyword counts from JSON arrays
   const keywordCounts: Record<string, number> = {}
-  for (const row of allPostsForKeywords) {
-    const kws: string[] = JSON.parse(row.matchedKeywords as string) ?? []
+  for (const row of keywordRows) {
+    const kws: string[] = JSON.parse(row.matched_keywords) ?? []
     for (const kw of kws) {
       keywordCounts[kw] = (keywordCounts[kw] ?? 0) + 1
     }
@@ -30,52 +41,13 @@ export async function GET(req: NextRequest) {
     .slice(0, 10)
     .map(([keyword, count]) => ({ keyword, count }))
 
-  const [byTierRaw, bySubredditRaw, totalRaw, replyRateRaw] = await Promise.all([
-    // Posts by relevance tier
-    db
-      .select({
-        tier: redditPosts.relevanceTier,
-        count: count(),
-      })
-      .from(redditPosts)
-      .where(and(...baseConditions))
-      .groupBy(redditPosts.relevanceTier),
-
-    // Posts by subreddit (top 10)
-    db
-      .select({
-        subreddit: redditPosts.subreddit,
-        count: count(),
-      })
-      .from(redditPosts)
-      .where(and(...baseConditions))
-      .groupBy(redditPosts.subreddit)
-      .orderBy(sql`count(*) desc`)
-      .limit(10),
-
-    // Total count
-    db.select({ count: count() }).from(redditPosts).where(and(...baseConditions)),
-
-    // Reply rate (among high-relevance posts)
-    db
-      .select({
-        status: redditPosts.status,
-        count: count(),
-      })
-      .from(redditPosts)
-      .where(
-        and(...baseConditions, eq(redditPosts.relevanceTier, 'high'))
-      )
-      .groupBy(redditPosts.status),
-  ])
-
-  const totalHigh = replyRateRaw.reduce((a, r) => a + r.count, 0)
-  const posted = replyRateRaw.find(r => r.status === 'posted')?.count ?? 0
+  const totalHigh = replyRateRows.reduce((a, r) => a + r.count, 0)
+  const posted = replyRateRows.find(r => r.status === 'posted')?.count ?? 0
 
   return NextResponse.json({
-    total: totalRaw[0]?.count ?? 0,
-    byTier: byTierRaw,
-    bySubreddit: bySubredditRaw,
+    total: totalRows[0]?.count ?? 0,
+    byTier,
+    bySubreddit,
     byKeyword,
     replyRate: totalHigh > 0 ? Math.round((posted / totalHigh) * 100) : 0,
     posted,

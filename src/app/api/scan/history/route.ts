@@ -1,13 +1,9 @@
 import { NextResponse } from 'next/server'
-import { db } from '@/db'
-import { scanLogs } from '@/db/schema'
-import { desc } from 'drizzle-orm'
+import { query } from '@/lib/db'
 
 export async function GET() {
-  const logs = await db
-    .select()
-    .from(scanLogs)
-    .orderBy(desc(scanLogs.startedAt))
-    .limit(50)
+  const logs = await query(
+    'SELECT * FROM scan_logs ORDER BY started_at DESC LIMIT 50'
+  )
   return NextResponse.json(logs)
 }

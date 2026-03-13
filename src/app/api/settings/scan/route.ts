@@ -1,33 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/db'
-import { appSettings, scanLogs } from '@/db/schema'
-import { eq, desc } from 'drizzle-orm'
+import { query, execute } from '@/lib/db'
 
 const SCAN_KEY = 'scan_settings'
 
 export const DEFAULT_SCAN_SETTINGS = {
-  intervalHours: 3,   // 1 | 3 | 6 | 12 | 24
-  daysBack: 7,        // 1 | 3 | 7 | 30
+  intervalHours: 3,
+  daysBack: 7,
 }
 
 export async function GET() {
-  const [settingsRow] = await db.select().from(appSettings).where(eq(appSettings.key, SCAN_KEY))
-  const settings = settingsRow
-    ? { ...DEFAULT_SCAN_SETTINGS, ...JSON.parse(settingsRow.value) }
+  const rows = await query<{ value: string }>('SELECT value FROM app_settings WHERE key = ?', [SCAN_KEY])
+  const settings = rows.length
+    ? { ...DEFAULT_SCAN_SETTINGS, ...JSON.parse(rows[0].value) }
     : DEFAULT_SCAN_SETTINGS
 
-  // Also return last scan info
-  const [lastScan] = await db
-    .select()
-    .from(scanLogs)
-    .where(eq(scanLogs.status, 'completed'))
-    .orderBy(desc(scanLogs.completedAt))
-    .limit(1)
+  const lastScans = await query<{ completed_at: string; new_posts: number }>(
+    `SELECT completed_at, new_posts FROM scan_logs WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 1`
+  )
+  const lastScan = lastScans[0] ?? null
 
   return NextResponse.json({
     ...settings,
-    lastScanAt: lastScan?.completedAt ?? null,
-    lastScanNew: lastScan?.newPosts ?? null,
+    lastScanAt: lastScan?.completed_at ?? null,
+    lastScanNew: lastScan?.new_posts ?? null,
   })
 }
 
@@ -44,12 +39,11 @@ export async function POST(req: NextRequest) {
   }
 
   const merged = { ...DEFAULT_SCAN_SETTINGS, ...body }
-  await db
-    .insert(appSettings)
-    .values({ key: SCAN_KEY, value: JSON.stringify(merged) })
-    .onConflictDoUpdate({
-      target: appSettings.key,
-      set: { value: JSON.stringify(merged), updatedAt: new Date().toISOString() },
-    })
+  const id = crypto.randomUUID()
+  await execute(
+    `INSERT INTO app_settings (id, key, value, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    [id, SCAN_KEY, JSON.stringify(merged), new Date().toISOString()]
+  )
   return NextResponse.json({ ok: true })
 }

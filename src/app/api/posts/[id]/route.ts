@@ -1,54 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/db'
-import { redditPosts, products } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { query, execute } from '@/lib/db'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [row] = await db
-    .select({
-      post: redditPosts,
-      product: { id: products.id, name: products.name },
-    })
-    .from(redditPosts)
-    .leftJoin(products, eq(redditPosts.productId, products.id))
-    .where(eq(redditPosts.id, id))
-
-  if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const rows = await query<{
+    id: string; reddit_post_id: string; product_id: string; subreddit: string
+    title: string; body: string; author: string; score: number; comment_count: number
+    url: string; matched_keywords: string; relevance_score: number; relevance_tier: string
+    relevance_reason: string; status: string; reddit_created_at: string; fetched_at: string
+    p_id: string; p_name: string
+  }>(
+    `SELECT rp.*, p.id as p_id, p.name as p_name
+     FROM reddit_posts rp LEFT JOIN products p ON rp.product_id = p.id
+     WHERE rp.id = ?`,
+    [id]
+  )
+  if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const r = rows[0]
   return NextResponse.json({
     post: {
-      ...row.post,
-      matchedKeywords: JSON.parse(row.post.matchedKeywords as string),
+      id: r.id, redditPostId: r.reddit_post_id, productId: r.product_id,
+      subreddit: r.subreddit, title: r.title, body: r.body, author: r.author,
+      score: r.score, commentCount: r.comment_count, url: r.url,
+      matchedKeywords: JSON.parse(r.matched_keywords),
+      relevanceScore: r.relevance_score, relevanceTier: r.relevance_tier,
+      relevanceReason: r.relevance_reason, status: r.status,
+      redditCreatedAt: r.reddit_created_at, fetchedAt: r.fetched_at,
     },
-    product: row.product,
+    product: r.p_id ? { id: r.p_id, name: r.p_name } : null,
   })
 }
 
-// Only allow updating status — no mass-assignment
-const ALLOWED_STATUS = ['new', 'draft', 'approved', 'posted', 'skipped', 'bookmarked'] as const
-type AllowedStatus = typeof ALLOWED_STATUS[number]
+const ALLOWED_STATUS = ['new', 'draft', 'approved', 'posted', 'skipped', 'bookmarked']
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const body = await req.json()
 
-  // Whitelist: only status can be changed via this route
-  const update: Partial<{ status: AllowedStatus }> = {}
   if (body.status !== undefined) {
     if (!ALLOWED_STATUS.includes(body.status)) {
       return NextResponse.json({ error: `Invalid status: ${body.status}` }, { status: 400 })
     }
-    update.status = body.status
+    await execute('UPDATE reddit_posts SET status = ? WHERE id = ?', [body.status, id])
+    const rows = await query<{ id: string; matched_keywords: string; status: string }>(
+      'SELECT * FROM reddit_posts WHERE id = ?', [id]
+    )
+    if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    return NextResponse.json({ ...rows[0], matchedKeywords: JSON.parse(rows[0].matched_keywords) })
   }
 
-  if (Object.keys(update).length === 0) {
-    return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
-  }
-
-  const [row] = await db.update(redditPosts).set(update).where(eq(redditPosts.id, id)).returning()
-  if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json({
-    ...row,
-    matchedKeywords: JSON.parse(row.matchedKeywords as string),
-  })
+  return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
 }

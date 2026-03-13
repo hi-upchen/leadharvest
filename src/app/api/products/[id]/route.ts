@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/db'
-import { products } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { query, execute } from '@/lib/db'
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const [row] = await db.select().from(products).where(eq(products.id, id))
-  if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const rows = await query<{ id: string; name: string; url: string; description: string; problems_solved: string; features: string; target_audience: string; reply_tone: string; promotion_intensity: string; keywords: string; subreddits: string; is_active: number; created_at: string }>(
+    'SELECT * FROM products WHERE id = ?', [id]
+  )
+  if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const row = rows[0]
   return NextResponse.json({
     ...row,
-    keywords: JSON.parse(row.keywords as string),
-    subreddits: JSON.parse(row.subreddits as string),
+    problemsSolved: row.problems_solved,
+    targetAudience: row.target_audience,
+    replyTone: row.reply_tone,
+    promotionIntensity: row.promotion_intensity,
+    isActive: row.is_active === 1,
+    keywords: JSON.parse(row.keywords),
+    subreddits: JSON.parse(row.subreddits),
   })
 }
 
@@ -18,46 +24,52 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const body = await req.json()
 
-  // Whitelist updatable fields — never allow id or createdAt to be changed
-  const ALLOWED = ['name', 'url', 'description', 'problemsSolved', 'features',
-    'targetAudience', 'replyTone', 'promotionIntensity', 'keywords', 'subreddits', 'isActive']
+  const COLUMN_MAP: Record<string, string> = {
+    name: 'name', url: 'url', description: 'description',
+    problemsSolved: 'problems_solved', features: 'features',
+    targetAudience: 'target_audience', replyTone: 'reply_tone',
+    promotionIntensity: 'promotion_intensity', keywords: 'keywords',
+    subreddits: 'subreddits', isActive: 'is_active',
+  }
   const INTENSITY_VALUES = ['subtle', 'moderate', 'direct']
 
-  const updateData: Record<string, unknown> = {}
-  for (const key of ALLOWED) {
-    if (body[key] !== undefined) updateData[key] = body[key]
+  const setClauses: string[] = []
+  const values: (string | number | null)[] = []
+
+  for (const [jsKey, colName] of Object.entries(COLUMN_MAP)) {
+    if (body[jsKey] === undefined) continue
+
+    if (jsKey === 'name' && (!body.name?.trim())) return NextResponse.json({ error: 'name cannot be empty' }, { status: 400 })
+    if (jsKey === 'url' && !/^https?:\/\/.+/.test(body.url)) return NextResponse.json({ error: 'url must start with http:// or https://' }, { status: 400 })
+    if (jsKey === 'promotionIntensity' && !INTENSITY_VALUES.includes(body.promotionIntensity)) return NextResponse.json({ error: 'promotionIntensity must be subtle, moderate, or direct' }, { status: 400 })
+    if (jsKey === 'subreddits' && Array.isArray(body.subreddits)) {
+      const badSub = body.subreddits.find((s: string) => !/^[a-zA-Z0-9_]{1,50}$/.test(s))
+      if (badSub) return NextResponse.json({ error: `Invalid subreddit: "${badSub}"` }, { status: 400 })
+    }
+
+    setClauses.push(`${colName} = ?`)
+    if (jsKey === 'keywords' || jsKey === 'subreddits') values.push(JSON.stringify(body[jsKey]))
+    else if (jsKey === 'isActive') values.push(body.isActive ? 1 : 0)
+    else values.push(body[jsKey])
   }
 
-  // Validate required string fields if present
-  if (updateData.name !== undefined && (typeof updateData.name !== 'string' || !updateData.name.trim())) {
-    return NextResponse.json({ error: 'name cannot be empty' }, { status: 400 })
-  }
-  if (updateData.url !== undefined && (typeof updateData.url !== 'string' || !updateData.url.startsWith('http'))) {
-    return NextResponse.json({ error: 'url must start with http:// or https://' }, { status: 400 })
-  }
-  if (updateData.description !== undefined && (typeof updateData.description !== 'string' || !updateData.description.trim())) {
-    return NextResponse.json({ error: 'description cannot be empty' }, { status: 400 })
-  }
-  if (updateData.promotionIntensity !== undefined && !INTENSITY_VALUES.includes(updateData.promotionIntensity as string)) {
-    return NextResponse.json({ error: 'promotionIntensity must be subtle, moderate, or direct' }, { status: 400 })
-  }
+  if (!setClauses.length) return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
 
-  // Serialize JSON fields
-  if (Array.isArray(updateData.keywords)) updateData.keywords = JSON.stringify(updateData.keywords)
-  if (Array.isArray(updateData.subreddits)) updateData.subreddits = JSON.stringify(updateData.subreddits)
+  await execute(`UPDATE products SET ${setClauses.join(', ')} WHERE id = ?`, [...values, id])
 
-  if (Object.keys(updateData).length === 0) {
-    return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
-  }
-
-  const [row] = await db.update(products)
-    .set(updateData)
-    .where(eq(products.id, id))
-    .returning()
-  if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const rows = await query<{ id: string; name: string; url: string; description: string; problems_solved: string; features: string; target_audience: string; reply_tone: string; promotion_intensity: string; keywords: string; subreddits: string; is_active: number; created_at: string }>(
+    'SELECT * FROM products WHERE id = ?', [id]
+  )
+  if (!rows.length) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  const row = rows[0]
   return NextResponse.json({
     ...row,
-    keywords: JSON.parse(row.keywords as string),
-    subreddits: JSON.parse(row.subreddits as string),
+    problemsSolved: row.problems_solved,
+    targetAudience: row.target_audience,
+    replyTone: row.reply_tone,
+    promotionIntensity: row.promotion_intensity,
+    isActive: row.is_active === 1,
+    keywords: JSON.parse(row.keywords),
+    subreddits: JSON.parse(row.subreddits),
   })
 }

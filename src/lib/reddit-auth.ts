@@ -1,7 +1,5 @@
-import { db } from '@/db'
-import { appSettings } from '@/db/schema'
+import { query, execute } from '@/lib/db'
 import { encrypt, decrypt } from './encrypt'
-import { eq } from 'drizzle-orm'
 
 const REDDIT_TOKEN_KEY = 'reddit_token'
 const REDDIT_AUTH_URL = 'https://www.reddit.com/api/v1/authorize'
@@ -10,7 +8,7 @@ const REDDIT_TOKEN_URL = 'https://www.reddit.com/api/v1/access_token'
 export interface RedditTokenData {
   accessToken: string
   refreshToken: string
-  expiresAt: number // unix ms
+  expiresAt: number
   username: string
 }
 
@@ -47,7 +45,6 @@ export async function exchangeCodeForToken(code: string): Promise<RedditTokenDat
   const data = await res.json()
   if (data.error) throw new Error(`Reddit OAuth error: ${data.error}`)
 
-  // Fetch username
   const meRes = await fetch('https://oauth.reddit.com/api/v1/me', {
     headers: {
       Authorization: `Bearer ${data.access_token}`,
@@ -93,21 +90,24 @@ export async function refreshAccessToken(tokenData: RedditTokenData): Promise<Re
 
 export async function saveToken(tokenData: RedditTokenData): Promise<void> {
   const encrypted = encrypt(JSON.stringify(tokenData))
-  await db.insert(appSettings)
-    .values({ key: REDDIT_TOKEN_KEY, value: encrypted })
-    .onConflictDoUpdate({
-      target: appSettings.key,
-      set: { value: encrypted, updatedAt: new Date().toISOString() },
-    })
+  const id = crypto.randomUUID()
+  await execute(
+    `INSERT INTO app_settings (id, key, value, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    [id, REDDIT_TOKEN_KEY, encrypted, new Date().toISOString()]
+  )
 }
 
 export async function getToken(): Promise<RedditTokenData | null> {
-  const rows = await db.select().from(appSettings).where(eq(appSettings.key, REDDIT_TOKEN_KEY))
+  const rows = await query<{ value: string }>(
+    'SELECT value FROM app_settings WHERE key = ?',
+    [REDDIT_TOKEN_KEY]
+  )
   if (!rows.length) return null
 
   const tokenData: RedditTokenData = JSON.parse(decrypt(rows[0].value))
 
-  // Auto-refresh if expired (within 60 seconds of expiry)
   if (Date.now() > tokenData.expiresAt - 60_000) {
     try {
       const refreshed = await refreshAccessToken(tokenData)
@@ -115,12 +115,12 @@ export async function getToken(): Promise<RedditTokenData | null> {
       return refreshed
     } catch (e) {
       console.error('Token refresh failed:', e)
-      return tokenData // Return stale token, let caller handle error
+      return tokenData
     }
   }
   return tokenData
 }
 
 export async function deleteToken(): Promise<void> {
-  await db.delete(appSettings).where(eq(appSettings.key, REDDIT_TOKEN_KEY))
+  await execute('DELETE FROM app_settings WHERE key = ?', [REDDIT_TOKEN_KEY])
 }

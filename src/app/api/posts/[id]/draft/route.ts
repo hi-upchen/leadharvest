@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/db'
-import { redditPosts, products, replyDrafts } from '@/db/schema'
-import { eq, desc } from 'drizzle-orm'
+import { query, execute } from '@/lib/db'
 import { generateReplyDraft } from '@/lib/ai'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -9,75 +7,54 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => ({}))
   const tone = body.tone ?? 'default'
 
-  const [postRow] = await db
-    .select()
-    .from(redditPosts)
-    .where(eq(redditPosts.id, id))
+  const posts = await query<{
+    id: string; product_id: string; title: string; body: string; subreddit: string
+  }>('SELECT id, product_id, title, body, subreddit FROM reddit_posts WHERE id = ?', [id])
+  if (!posts.length) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
+  const post = posts[0]
 
-  if (!postRow) return NextResponse.json({ error: 'Post not found' }, { status: 404 })
-
-  const [product] = await db
-    .select()
-    .from(products)
-    .where(eq(products.id, postRow.productId))
-
-  if (!product) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+  const products = await query<{
+    id: string; name: string; url: string; description: string; problems_solved: string
+    features: string; target_audience: string; reply_tone: string; promotion_intensity: string
+  }>('SELECT * FROM products WHERE id = ?', [post.product_id])
+  if (!products.length) return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+  const product = products[0]
 
   const draft = await generateReplyDraft(
     {
       name: product.name,
       url: product.url,
       description: product.description,
-      problemsSolved: product.problemsSolved,
+      problemsSolved: product.problems_solved,
       features: product.features,
-      targetAudience: product.targetAudience,
-      replyTone: product.replyTone,
-      promotionIntensity: product.promotionIntensity,
+      targetAudience: product.target_audience,
+      replyTone: product.reply_tone,
+      promotionIntensity: product.promotion_intensity,
     },
-    {
-      title: postRow.title,
-      body: postRow.body,
-      subreddit: postRow.subreddit,
-    },
+    { title: post.title, body: post.body, subreddit: post.subreddit },
     tone
   )
 
-  // Get current version count
-  const existingDrafts = await db
-    .select({ version: replyDrafts.version })
-    .from(replyDrafts)
-    .where(eq(replyDrafts.postId, id))
-    .orderBy(desc(replyDrafts.version))
-    .limit(1)
-
+  const existingDrafts = await query<{ version: number }>(
+    'SELECT version FROM reply_drafts WHERE post_id = ? ORDER BY version DESC LIMIT 1', [id]
+  )
   const version = (existingDrafts[0]?.version ?? 0) + 1
 
-  const [saved] = await db
-    .insert(replyDrafts)
-    .values({
-      postId: id,
-      productId: product.id,
-      body: draft,
-      version,
-    })
-    .returning()
+  const draftId = crypto.randomUUID()
+  await execute(
+    `INSERT INTO reply_drafts (id, post_id, product_id, body, version) VALUES (?, ?, ?, ?, ?)`,
+    [draftId, id, product.id, draft, version]
+  )
+  await execute(`UPDATE reddit_posts SET status = 'draft' WHERE id = ?`, [id])
 
-  // Update post status to 'draft'
-  await db
-    .update(redditPosts)
-    .set({ status: 'draft' })
-    .where(eq(redditPosts.id, id))
-
+  const [saved] = await query('SELECT * FROM reply_drafts WHERE id = ?', [draftId])
   return NextResponse.json(saved)
 }
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const drafts = await db
-    .select()
-    .from(replyDrafts)
-    .where(eq(replyDrafts.postId, id))
-    .orderBy(desc(replyDrafts.version))
-
+  const drafts = await query(
+    'SELECT * FROM reply_drafts WHERE post_id = ? ORDER BY version DESC', [id]
+  )
   return NextResponse.json(drafts)
 }

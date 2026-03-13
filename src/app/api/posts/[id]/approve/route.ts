@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/db'
-import { redditPosts, replyDrafts } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { execute } from '@/lib/db'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -12,22 +10,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Reply body cannot be empty' }, { status: 400 })
   }
 
-  const [updatedDraft] = await db
-    .update(replyDrafts)
-    .set({
-      body,
-      isApproved: true,
-      approvedAt: new Date().toISOString(),
-    })
-    .where(eq(replyDrafts.id, draftId))
-    .returning()
+  const { rowsAffected } = await execute(
+    `UPDATE reply_drafts SET body = ?, is_approved = 1, approved_at = ? WHERE id = ?`,
+    [body, new Date().toISOString(), draftId]
+  )
+  if (!rowsAffected) return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
 
-  if (!updatedDraft) return NextResponse.json({ error: 'Draft not found' }, { status: 404 })
-
-  await db
-    .update(redditPosts)
-    .set({ status: 'approved' })
-    .where(eq(redditPosts.id, id))
-
+  await execute(`UPDATE reddit_posts SET status = 'approved' WHERE id = ?`, [id])
   return NextResponse.json({ ok: true })
 }

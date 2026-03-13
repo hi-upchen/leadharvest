@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
   const state = searchParams.get('state')
   const storedState = req.cookies.get('reddit_oauth_state')?.value
 
-  if (!code || state !== storedState) {
+  if (!code || !state || !storedState || state !== storedState) {
     return NextResponse.redirect(new URL('/settings/reddit?error=oauth_failed', req.url))
   }
 

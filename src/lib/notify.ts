@@ -1,6 +1,4 @@
-import { db } from '@/db'
-import { appSettings } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { query } from '@/lib/db'
 
 interface NotifiablePost {
   id: string
@@ -34,7 +32,10 @@ function isQuietHours(quietStart: string, quietEnd: string): boolean {
 }
 
 async function getNotificationSettings(): Promise<NotificationSettings | null> {
-  const rows = await db.select().from(appSettings).where(eq(appSettings.key, 'notification_settings'))
+  const rows = await query<{ value: string }>(
+    'SELECT value FROM app_settings WHERE key = ?',
+    ['notification_settings']
+  )
   if (!rows.length) return null
   return JSON.parse(rows[0].value) as NotificationSettings
 }
@@ -52,6 +53,15 @@ async function sendTelegram(botToken: string, chatId: string, text: string) {
   }
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 async function sendEmailDigest(settings: NotificationSettings, posts: NotifiablePost[]) {
   if (!settings.email) return
 
@@ -60,11 +70,11 @@ async function sendEmailDigest(settings: NotificationSettings, posts: Notifiable
     <h2>Reddit Marketing Monitor — ${posts.length} new relevant post${posts.length > 1 ? 's' : ''}</h2>
     ${posts.map(p => `
       <div style="border:1px solid #eee;padding:12px;margin:8px 0;border-radius:6px">
-        <strong>r/${p.subreddit}</strong> &nbsp;
-        <span style="background:${p.relevanceTier === 'high' ? '#dcfce7' : '#fef9c3'};padding:2px 6px;border-radius:4px;font-size:12px">${p.relevanceTier}</span><br/>
-        <a href="${p.url}" style="font-weight:600">${p.title}</a><br/>
-        <em style="color:#666">${p.relevanceReason}</em><br/>
-        <a href="${appUrl}/reply/${p.id}">Draft Reply →</a>
+        <strong>r/${escapeHtml(p.subreddit)}</strong> &nbsp;
+        <span style="background:${p.relevanceTier === 'high' ? '#dcfce7' : '#fef9c3'};padding:2px 6px;border-radius:4px;font-size:12px">${escapeHtml(p.relevanceTier)}</span><br/>
+        <a href="${escapeHtml(p.url)}" style="font-weight:600">${escapeHtml(p.title)}</a><br/>
+        <em style="color:#666">${escapeHtml(p.relevanceReason)}</em><br/>
+        <a href="${appUrl}/reply/${escapeHtml(p.id)}">Draft Reply →</a>
       </div>
     `).join('')}
   `
@@ -73,7 +83,6 @@ async function sendEmailDigest(settings: NotificationSettings, posts: Notifiable
   if (!process.env.RESEND_API_KEY) {
     console.log('[notify] RESEND_API_KEY not set. Would send email:')
     console.log(`To: ${settings.email} | Subject: ${subject}`)
-    console.log(`Posts: ${posts.map(p => p.title).join(', ')}`)
     return
   }
 
@@ -85,7 +94,6 @@ async function sendEmailDigest(settings: NotificationSettings, posts: Notifiable
     subject,
     html,
   })
-  console.log(`[notify] Email sent to ${settings.email}`)
 }
 
 export async function sendNewPostsNotification(posts: NotifiablePost[]) {
@@ -94,41 +102,28 @@ export async function sendNewPostsNotification(posts: NotifiablePost[]) {
   const settings = await getNotificationSettings()
   if (!settings) return
 
-  if (isQuietHours(settings.quietStart || '23:00', settings.quietEnd || '08:00')) {
-    console.log('[notify] Quiet hours active, suppressing notification')
-    return
-  }
+  if (isQuietHours(settings.quietStart || '23:00', settings.quietEnd || '08:00')) return
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
-  // Email digest
   if (settings.email) {
-    try {
-      await sendEmailDigest(settings, posts)
-    } catch (e) {
-      console.error('[notify] Email send failed:', e)
-    }
+    try { await sendEmailDigest(settings, posts) } catch (e) { console.error('[notify] Email failed:', e) }
   }
 
-  // Telegram: send per-post if frequency=immediate, or digest if frequency=digest
   if (settings.telegramEnabled && settings.telegramBotToken && settings.telegramChatId) {
     try {
       if (settings.frequency === 'immediate') {
         for (const post of posts) {
-          const text = `🔴 <b>New ${post.relevanceTier} match</b>\n<b>r/${post.subreddit}</b>\n<a href="${post.url}">${post.title}</a>\n<i>${post.relevanceReason}</i>\n\n<a href="${appUrl}/reply/${post.id}">Draft Reply →</a>`
+          const text = `🔴 <b>New ${escapeHtml(post.relevanceTier)} match</b>\n<b>r/${escapeHtml(post.subreddit)}</b>\n<a href="${escapeHtml(post.url)}">${escapeHtml(post.title)}</a>\n<i>${escapeHtml(post.relevanceReason)}</i>\n\n<a href="${appUrl}/reply/${escapeHtml(post.id)}">Draft Reply →</a>`
           await sendTelegram(settings.telegramBotToken, settings.telegramChatId, text)
         }
       } else {
-        // Digest: one message with all posts
         const lines = posts.map(p =>
-          `• <b>r/${p.subreddit}</b> [${p.relevanceTier}]\n  <a href="${p.url}">${p.title}</a>`
+          `• <b>r/${escapeHtml(p.subreddit)}</b> [${escapeHtml(p.relevanceTier)}]\n  <a href="${escapeHtml(p.url)}">${escapeHtml(p.title)}</a>`
         ).join('\n\n')
         const text = `📊 <b>RMM: ${posts.length} new post${posts.length > 1 ? 's' : ''}</b>\n\n${lines}\n\n<a href="${appUrl}">Open Dashboard →</a>`
         await sendTelegram(settings.telegramBotToken, settings.telegramChatId, text)
       }
-      console.log(`[notify] Telegram sent for ${posts.length} post(s)`)
-    } catch (e) {
-      console.error('[notify] Telegram send failed:', e)
-    }
+    } catch (e) { console.error('[notify] Telegram failed:', e) }
   }
 }

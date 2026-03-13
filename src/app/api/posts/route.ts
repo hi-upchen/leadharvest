@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/db'
-import { redditPosts, products } from '@/db/schema'
-import { eq, and, desc, inArray } from 'drizzle-orm'
+import { query } from '@/lib/db'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -10,37 +8,44 @@ export async function GET(req: NextRequest) {
   const status = searchParams.get('status') ?? 'new,draft,approved,bookmarked'
   const statuses = status.split(',').filter(Boolean)
 
-  const conditions = []
-  if (productId) conditions.push(eq(redditPosts.productId, productId))
-  if (tier) conditions.push(eq(redditPosts.relevanceTier, tier as 'high' | 'medium' | 'low'))
-  if (statuses.length > 0) {
-    conditions.push(
-      inArray(
-        redditPosts.status,
-        statuses as ('new' | 'draft' | 'approved' | 'posted' | 'skipped' | 'bookmarked')[]
-      )
-    )
+  const conditions: string[] = []
+  const values: (string | number)[] = []
+
+  if (productId) { conditions.push('rp.product_id = ?'); values.push(productId) }
+  if (tier) { conditions.push('rp.relevance_tier = ?'); values.push(tier) }
+  if (statuses.length) {
+    conditions.push(`rp.status IN (${statuses.map(() => '?').join(',')})`)
+    values.push(...statuses)
   }
 
-  const rows = await db
-    .select({
-      post: redditPosts,
-      product: { id: products.id, name: products.name },
-    })
-    .from(redditPosts)
-    .leftJoin(products, eq(redditPosts.productId, products.id))
-    .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(redditPosts.relevanceScore), desc(redditPosts.fetchedAt))
-    .limit(100)
-
-  // Parse JSON fields
-  return NextResponse.json(
-    rows.map(r => ({
-      post: {
-        ...r.post,
-        matchedKeywords: JSON.parse(r.post.matchedKeywords as string),
-      },
-      product: r.product,
-    }))
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const rows = await query<{
+    id: string; reddit_post_id: string; product_id: string; subreddit: string
+    title: string; body: string; author: string; score: number
+    comment_count: number; url: string; matched_keywords: string
+    relevance_score: number; relevance_tier: string; relevance_reason: string
+    status: string; reddit_created_at: string; fetched_at: string
+    product_id2: string; product_name: string
+  }>(
+    `SELECT rp.*, p.id as product_id2, p.name as product_name
+     FROM reddit_posts rp
+     LEFT JOIN products p ON rp.product_id = p.id
+     ${where}
+     ORDER BY rp.relevance_score DESC, rp.fetched_at DESC
+     LIMIT 100`,
+    values
   )
+
+  return NextResponse.json(rows.map(r => ({
+    post: {
+      id: r.id, redditPostId: r.reddit_post_id, productId: r.product_id,
+      subreddit: r.subreddit, title: r.title, body: r.body, author: r.author,
+      score: r.score, commentCount: r.comment_count, url: r.url,
+      matchedKeywords: JSON.parse(r.matched_keywords),
+      relevanceScore: r.relevance_score, relevanceTier: r.relevance_tier,
+      relevanceReason: r.relevance_reason, status: r.status,
+      redditCreatedAt: r.reddit_created_at, fetchedAt: r.fetched_at,
+    },
+    product: r.product_id2 ? { id: r.product_id2, name: r.product_name } : null,
+  })))
 }

@@ -1,31 +1,20 @@
-/**
- * POST /api/posts/check-replies
- * Polls Reddit for updated scores on posted comments.
- * Called by the cron scheduler or manually from /analytics.
- */
 import { NextResponse } from 'next/server'
-import { db } from '@/db'
-import { replyDrafts } from '@/db/schema'
-import { eq, and, isNotNull } from 'drizzle-orm'
+import { query, execute } from '@/lib/db'
 import { getToken } from '@/lib/reddit-auth'
 
 export async function POST() {
   const token = await getToken()
   if (!token) return NextResponse.json({ error: 'Reddit not connected' }, { status: 401 })
 
-  // Find all posted drafts that have a comment ID
-  const posted = await db
-    .select()
-    .from(replyDrafts)
-    .where(and(eq(replyDrafts.isPosted, true), isNotNull(replyDrafts.redditCommentId)))
-    .limit(20) // process up to 20 at a time
+  const posted = await query<{ id: string; reddit_comment_id: string }>(
+    'SELECT id, reddit_comment_id FROM reply_drafts WHERE is_posted = 1 AND reddit_comment_id IS NOT NULL LIMIT 20'
+  )
 
   let updated = 0
   for (const draft of posted) {
-    if (!draft.redditCommentId) continue
     try {
       const res = await fetch(
-        `https://oauth.reddit.com/api/info.json?id=t1_${draft.redditCommentId}`,
+        `https://oauth.reddit.com/api/info.json?id=t1_${draft.reddit_comment_id}`,
         {
           headers: {
             Authorization: `Bearer ${token.accessToken}`,
@@ -38,13 +27,10 @@ export async function POST() {
       const comment = data?.data?.children?.[0]?.data
       if (!comment) continue
 
-      await db
-        .update(replyDrafts)
-        .set({ commentScore: comment.score ?? 0 })
-        .where(eq(replyDrafts.id, draft.id))
+      await execute('UPDATE reply_drafts SET comment_score = ? WHERE id = ?', [comment.score ?? 0, draft.id])
       updated++
     } catch (e) {
-      console.error(`[check-replies] Failed to update comment ${draft.redditCommentId}:`, e)
+      console.error(`[check-replies] Failed for ${draft.reddit_comment_id}:`, e)
     }
   }
 
