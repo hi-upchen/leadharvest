@@ -78,11 +78,13 @@ async function searchReddit(
 
   const cutoff = Math.floor(Date.now() / 1000) - daysBack * 86400
   const baseUrl = oauthToken ? REDDIT_OAUTH_URL : REDDIT_PUBLIC_URL
+  // Map daysBack to Reddit's time filter parameter
+  const tParam = daysBack <= 1 ? 'day' : daysBack <= 7 ? 'week' : daysBack <= 30 ? 'month' : 'year'
   let url: string
   if (subreddit) {
-    url = `${baseUrl}/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&restrict_sr=on&sort=new&t=week&limit=25`
+    url = `${baseUrl}/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&restrict_sr=on&sort=new&t=${tParam}&limit=25`
   } else {
-    url = `${baseUrl}/search.json?q=${encodeURIComponent(keyword)}&sort=new&t=week&limit=25`
+    url = `${baseUrl}/search.json?q=${encodeURIComponent(keyword)}&sort=new&t=${tParam}&limit=25`
   }
 
   const headers: Record<string, string> = {
