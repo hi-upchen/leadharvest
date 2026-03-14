@@ -82,9 +82,9 @@ async function searchReddit(
   const tParam = daysBack <= 1 ? 'day' : daysBack <= 7 ? 'week' : daysBack <= 30 ? 'month' : 'year'
   let url: string
   if (subreddit) {
-    url = `${baseUrl}/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&restrict_sr=on&sort=new&t=${tParam}&limit=25`
+    url = `${baseUrl}/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&restrict_sr=on&sort=new&t=${tParam}&limit=100`
   } else {
-    url = `${baseUrl}/search.json?q=${encodeURIComponent(keyword)}&sort=new&t=${tParam}&limit=25`
+    url = `${baseUrl}/search.json?q=${encodeURIComponent(keyword)}&sort=new&t=${tParam}&limit=100`
   }
 
   const headers: Record<string, string> = {
