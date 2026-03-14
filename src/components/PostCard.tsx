@@ -73,6 +73,9 @@ export function PostCard({ post, productName, onAction }: PostCardProps) {
           >
             {post.relevanceTier}
           </span>
+          {post.status === 'approved' && (
+            <Badge variant="default" className="bg-blue-100 text-blue-800 hover:bg-blue-100">Approved</Badge>
+          )}
         </div>
 
         <a

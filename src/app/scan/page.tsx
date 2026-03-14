@@ -206,8 +206,7 @@ export default function ScanPage() {
                   {log.status}
                 </Badge>
                 <span className="text-muted-foreground">{formatTime(log.startedAt)}</span>
-                <span>{log.newPosts} new posts</span>
-                <span className="text-muted-foreground">{log.claudeCalls} AI calls</span>
+                <span>{log.postsFound} found, {log.newPosts} new, {log.claudeCalls} AI calls</span>
                 {log.errorMessage && (
                   <span className="text-red-500 text-xs">{log.errorMessage}</span>
                 )}
