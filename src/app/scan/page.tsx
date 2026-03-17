@@ -33,7 +33,7 @@ export default function ScanPage() {
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [settings, setSettings] = useState<ScanSettings>({ intervalHours: 3, daysBack: 3, lastScanAt: null, lastScanNew: null })
+  const [settings, setSettings] = useState<ScanSettings>({ intervalHours: 72, daysBack: 3, lastScanAt: null, lastScanNew: null })
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsSaved, setSettingsSaved] = useState(false)
 
@@ -152,11 +152,11 @@ export default function ScanPage() {
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">Every hour</SelectItem>
-                  <SelectItem value="3">Every 3 hours</SelectItem>
-                  <SelectItem value="6">Every 6 hours</SelectItem>
-                  <SelectItem value="12">Every 12 hours</SelectItem>
-                  <SelectItem value="24">Daily</SelectItem>
+                  <SelectItem value="24">1d</SelectItem>
+                  <SelectItem value="72">3d</SelectItem>
+                  <SelectItem value="168">7d</SelectItem>
+                  <SelectItem value="336">14d</SelectItem>
+                  <SelectItem value="720">30d</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">How often to auto-scan Reddit.</p>
@@ -169,13 +169,11 @@ export default function ScanPage() {
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="1">Last 1 day</SelectItem>
-                  <SelectItem value="3">Last 3 days</SelectItem>
-                  <SelectItem value="7">Last 7 days</SelectItem>
-                  <SelectItem value="14">Last 14 days</SelectItem>
-                  <SelectItem value="30">Last 30 days</SelectItem>
-                  <SelectItem value="60">Last 60 days</SelectItem>
-                  <SelectItem value="90">Last 90 days</SelectItem>
+                  <SelectItem value="1">1d</SelectItem>
+                  <SelectItem value="3">3d</SelectItem>
+                  <SelectItem value="7">7d</SelectItem>
+                  <SelectItem value="14">14d</SelectItem>
+                  <SelectItem value="30">30d</SelectItem>
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">How far back to search for posts.</p>
