@@ -50,10 +50,10 @@ async function getScanSettings(): Promise<{ daysBack: number }> {
     )
     if (rows.length) {
       const s = JSON.parse(rows[0].value)
-      return { daysBack: Number(s.daysBack) || 7 }
+      return { daysBack: Number(s.daysBack) || 3 }
     }
   } catch {}
-  return { daysBack: 7 }
+  return { daysBack: 3 }
 }
 
 function sleep(ms: number) {
@@ -82,9 +82,9 @@ async function searchReddit(
   const tParam = daysBack <= 1 ? 'day' : daysBack <= 7 ? 'week' : daysBack <= 30 ? 'month' : 'year'
   let url: string
   if (subreddit) {
-    url = `${baseUrl}/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&restrict_sr=on&sort=new&t=${tParam}&limit=100`
+    url = `${baseUrl}/r/${subreddit}/search.json?q=${encodeURIComponent(keyword)}&restrict_sr=on&sort=new&t=${tParam}&limit=25`
   } else {
-    url = `${baseUrl}/search.json?q=${encodeURIComponent(keyword)}&sort=new&t=${tParam}&limit=100`
+    url = `${baseUrl}/search.json?q=${encodeURIComponent(keyword)}&sort=new&t=${tParam}&limit=25`
   }
 
   const headers: Record<string, string> = {
@@ -277,11 +277,19 @@ export async function runScan(triggeredBy: 'manual' | 'scheduled' = 'manual') {
             const wasCached = !!getCached(cKey)
             console.log(`[scanner] Searching "${keyword}" in ${sub ? `r/${sub}` : 'all'}`)
             const posts = await searchReddit(keyword, sub, daysBack, oauthToken)
-            console.log(`[scanner]   → ${posts.length} results${wasCached ? ' (cached)' : ''}`)
-            totalFound += posts.length
+            // Pre-filter: skip posts where no keyword appears in title or body
+            // Uses regex word-boundary prefix match so "export" matches "exporting", "exported", etc.
+            const filtered = posts.filter(post => {
+              const text = `${post.title} ${post.selftext}`.toLowerCase()
+              return keywords.some(kw =>
+                kw.split(/\s+/).every(word => new RegExp(`\\b${word.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(text))
+              )
+            })
+            console.log(`[scanner]   → ${posts.length} results, ${filtered.length} matched keywords${wasCached ? ' (cached)' : ''}`)
+            totalFound += filtered.length
 
             // Score and save each post immediately
-            for (const post of posts) {
+            for (const post of filtered) {
               try {
                 await scoreAndSave(post, keyword, product)
               } catch (e) {

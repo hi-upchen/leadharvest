@@ -6,7 +6,7 @@ const SCAN_KEY = 'scan_settings'
 
 export const DEFAULT_SCAN_SETTINGS = {
   intervalHours: 3,
-  daysBack: 7,
+  daysBack: 3,
 }
 
 export async function GET() {
@@ -32,13 +32,13 @@ export async function POST(req: NextRequest) {
   const denied = await requireAuth(); if (denied) return denied
   const body = await req.json()
   const VALID_INTERVALS = [1, 3, 6, 12, 24]
-  const VALID_DAYS = [1, 3, 7, 30]
+  const VALID_DAYS = [1, 3, 7, 14, 30, 60, 90]
 
   if (body.intervalHours && !VALID_INTERVALS.includes(Number(body.intervalHours))) {
     return NextResponse.json({ error: 'intervalHours must be 1, 3, 6, 12, or 24' }, { status: 400 })
   }
   if (body.daysBack && !VALID_DAYS.includes(Number(body.daysBack))) {
-    return NextResponse.json({ error: 'daysBack must be 1, 3, 7, or 30' }, { status: 400 })
+    return NextResponse.json({ error: 'daysBack must be 1, 3, 7, 14, 30, 60, or 90' }, { status: 400 })
   }
 
   // Only pick known keys to prevent arbitrary data injection

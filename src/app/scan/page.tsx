@@ -33,7 +33,7 @@ export default function ScanPage() {
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [settings, setSettings] = useState<ScanSettings>({ intervalHours: 3, daysBack: 7, lastScanAt: null, lastScanNew: null })
+  const [settings, setSettings] = useState<ScanSettings>({ intervalHours: 3, daysBack: 3, lastScanAt: null, lastScanNew: null })
   const [savingSettings, setSavingSettings] = useState(false)
   const [settingsSaved, setSettingsSaved] = useState(false)
 
@@ -169,6 +169,8 @@ export default function ScanPage() {
               >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="1">Last 1 day</SelectItem>
+                  <SelectItem value="3">Last 3 days</SelectItem>
                   <SelectItem value="7">Last 7 days</SelectItem>
                   <SelectItem value="14">Last 14 days</SelectItem>
                   <SelectItem value="30">Last 30 days</SelectItem>
