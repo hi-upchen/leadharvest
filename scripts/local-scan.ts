@@ -1,12 +1,12 @@
 import { config } from 'dotenv'
 config({ path: '.env.local' })
 
-// Dynamic imports — must load AFTER dotenv so env vars are available
-const { runScan } = await import('../src/lib/scanner')
-const { sendNewPostsNotification, sendTelegramError } = await import('../src/lib/notify')
-const { query } = await import('../src/lib/db')
-
 async function main() {
+  // Dynamic imports — must load AFTER dotenv so env vars are available
+  const { runScan } = await import('../src/lib/scanner')
+  const { sendNewPostsNotification, sendTelegramError } = await import('../src/lib/notify')
+  const { query } = await import('../src/lib/db')
+
   console.log(`[local-scan] Starting scan at ${new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}`)
 
   try {
