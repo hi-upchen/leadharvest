@@ -118,8 +118,8 @@ async function sendTelegramNotification(posts: NotifiablePost[]) {
     message += `\n🔴 *HIGH*\n`
     for (const p of highPosts) {
       message += `• \\[r/${escapeTelegramMarkdown(p.subreddit)}\\] ${escapeTelegramMarkdown(p.title.slice(0, 80))}\n`
-      message += `  → [Reddit](${p.url})\n`
-      message += `  → [Dashboard](${appUrl}/reply/${p.id})\n`
+      message += `  _${escapeTelegramMarkdown(p.relevanceReason.slice(0, 150))}_\n`
+      message += `  → [Reddit](${p.url}) \\| [Dashboard](${appUrl}/reply/${p.id})\n`
     }
   }
 
@@ -127,8 +127,8 @@ async function sendTelegramNotification(posts: NotifiablePost[]) {
     message += `\n🟡 *MEDIUM*\n`
     for (const p of mediumPosts) {
       message += `• \\[r/${escapeTelegramMarkdown(p.subreddit)}\\] ${escapeTelegramMarkdown(p.title.slice(0, 80))}\n`
-      message += `  → [Reddit](${p.url})\n`
-      message += `  → [Dashboard](${appUrl}/reply/${p.id})\n`
+      message += `  _${escapeTelegramMarkdown(p.relevanceReason.slice(0, 150))}_\n`
+      message += `  → [Reddit](${p.url}) \\| [Dashboard](${appUrl}/reply/${p.id})\n`
     }
   }
 
