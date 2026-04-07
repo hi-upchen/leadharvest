@@ -51,7 +51,7 @@ async function sendEmailDigest(settings: NotificationSettings, posts: Notifiable
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
   const html = `
-    <h2>Reddit Marketing Monitor — ${posts.length} new relevant post${posts.length > 1 ? 's' : ''}</h2>
+    <h2>LeadHarvest — ${posts.length} new relevant post${posts.length > 1 ? 's' : ''}</h2>
     ${posts.map(p => `
       <div style="border:1px solid #eee;padding:12px;margin:8px 0;border-radius:6px">
         <strong>r/${escapeHtml(p.subreddit)}</strong> &nbsp;
@@ -62,7 +62,7 @@ async function sendEmailDigest(settings: NotificationSettings, posts: Notifiable
       </div>
     `).join('')}
   `
-  const subject = `[RMM] ${posts.length} new Reddit post${posts.length > 1 ? 's' : ''} to reply to`
+  const subject = `[LeadHarvest] ${posts.length} new Reddit post${posts.length > 1 ? 's' : ''} to reply to`
 
   if (!process.env.RESEND_API_KEY) {
     console.log('[notify] RESEND_API_KEY not set. Would send email:')
@@ -80,15 +80,84 @@ async function sendEmailDigest(settings: NotificationSettings, posts: Notifiable
   })
 }
 
+function escapeTelegramMarkdown(text: string): string {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
+}
+
+async function sendTelegramNotification(posts: NotifiablePost[]) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const chatId = process.env.TELEGRAM_CHAT_ID
+  if (!token || !chatId) return
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+
+  const highPosts = posts.filter(p => p.relevanceTier === 'high')
+  const mediumPosts = posts.filter(p => p.relevanceTier === 'medium')
+
+  let message = `📊 *LeadHarvest 週報*\n找到 ${posts.length} 篇新帖子，${highPosts.length} 篇高相關\n`
+
+  if (highPosts.length > 0) {
+    message += `\n🔴 *HIGH*\n`
+    for (const p of highPosts) {
+      message += `• \\[r/${escapeTelegramMarkdown(p.subreddit)}\\] ${escapeTelegramMarkdown(p.title.slice(0, 80))}\n`
+      message += `  → [Reddit](${p.url})\n`
+      message += `  → [Dashboard](${appUrl}/reply/${p.id})\n`
+    }
+  }
+
+  if (mediumPosts.length > 0) {
+    message += `\n🟡 *MEDIUM*\n`
+    for (const p of mediumPosts) {
+      message += `• \\[r/${escapeTelegramMarkdown(p.subreddit)}\\] ${escapeTelegramMarkdown(p.title.slice(0, 80))}\n`
+      message += `  → [Reddit](${p.url})\n`
+      message += `  → [Dashboard](${appUrl}/reply/${p.id})\n`
+    }
+  }
+
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: message,
+      parse_mode: 'MarkdownV2',
+      disable_web_page_preview: true,
+    }),
+  })
+}
+
+export async function sendTelegramError(errorMessage: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN
+  const chatId = process.env.TELEGRAM_CHAT_ID
+  if (!token || !chatId) return
+
+  const message = `❌ *LeadHarvest 掃描失敗*\n錯誤：${escapeTelegramMarkdown(errorMessage)}\n時間：${escapeTelegramMarkdown(new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }))}`
+
+  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: message,
+      parse_mode: 'MarkdownV2',
+    }),
+  })
+}
+
 export async function sendNewPostsNotification(posts: NotifiablePost[]) {
   if (!posts.length) return
 
   const settings = await getNotificationSettings()
-  if (!settings) return
 
-  if (isQuietHours(settings.quietStart || '23:00', settings.quietEnd || '08:00')) return
-
-  if (settings.email) {
-    try { await sendEmailDigest(settings, posts) } catch (e) { console.error('[notify] Email failed:', e) }
+  // Email notification (requires settings from DB)
+  if (settings) {
+    if (!isQuietHours(settings.quietStart || '23:00', settings.quietEnd || '08:00')) {
+      if (settings.email) {
+        try { await sendEmailDigest(settings, posts) } catch (e) { console.error('[notify] Email failed:', e) }
+      }
+    }
   }
+
+  // Telegram notification (independent of DB settings)
+  try { await sendTelegramNotification(posts) } catch (e) { console.error('[notify] Telegram failed:', e) }
 }
