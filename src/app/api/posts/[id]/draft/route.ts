@@ -4,7 +4,7 @@ import { generateReplyDraft } from '@/lib/ai'
 import { requireAuth } from '@/lib/auth'
 
 // Preset tones when no user prompt is provided
-const PRESET_TONES = ['helpful', 'technical', 'personal story'] as const
+const PRESET_TONES = ['empathetic-direct', 'shared-journey', 'community-veteran'] as const
 
 // Angle instructions when user provides a prompt (to differentiate 3 outputs)
 const PROMPT_ANGLES = [

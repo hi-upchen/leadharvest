@@ -231,9 +231,9 @@ export async function generateReplyDraft(
   const utmUrl = appendUtm(product.url, post.subreddit, campaign)
 
   const toneInstructions: Record<string, string> = {
-    helpful: 'Be warm and directly helpful. Focus on solving their problem.',
-    technical: 'Use precise technical language. Be concise and factual.',
-    'personal story': 'Write as if sharing a personal experience or discovery.',
+    'empathetic-direct': `Start by acknowledging the poster's frustration or pain point — show you understand their problem. Then naturally introduce the tool as something you built ("I built a browser-based tool..."). Keep it concise (3-5 sentences). End with a light encouraging line. Always include the product URL as a markdown link. Example structure: empathize → introduce tool → brief feature mention → link → encouraging close.`,
+    'shared-journey': `Open by sharing that you went through the same frustration yourself (e.g. "I went through the exact same thing when I..."). Tell a mini personal story of how you hit the same wall. Then introduce the tool as something you built to solve your own problem. Be warm and relatable, slightly longer than other styles. Always include the product URL as a markdown link. Example structure: personal story → shared pain → "so I built..." → features → link → encouragement.`,
+    'community-veteran': `Write like a helpful community member who has been around a while and gives advice to newer users. Acknowledge that the issue is a common frustration. Introduce the tool naturally as something you made ("I ran into the same wall, so I ended up making..."). End with encouragement about the platform overall ("it really does grow on you", "hang in there"). Always include the product URL as a markdown link. Example structure: validate the frustration → experienced perspective → introduce tool → link → positive encouragement about the platform.`,
     minimal: 'Keep it to 2-3 sentences. Very brief and to the point.',
     default: '',
   }
