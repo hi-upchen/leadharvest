@@ -84,11 +84,29 @@ function escapeTelegramMarkdown(text: string): string {
   return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, '\\$&')
 }
 
-async function sendTelegramNotification(posts: NotifiablePost[]) {
+async function postToTelegram(text: string, options?: { disablePreview?: boolean }): Promise<void> {
   const token = process.env.TELEGRAM_BOT_TOKEN
   const chatId = process.env.TELEGRAM_CHAT_ID
   if (!token || !chatId) return
 
+  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'MarkdownV2',
+      ...(options?.disablePreview ? { disable_web_page_preview: true } : {}),
+    }),
+  })
+
+  if (!res.ok) {
+    const body = await res.text()
+    console.error(`[notify] Telegram API error: ${res.status} ${res.statusText} — ${body}`)
+  }
+}
+
+async function sendTelegramNotification(posts: NotifiablePost[]) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
 
   const highPosts = posts.filter(p => p.relevanceTier === 'high')
@@ -114,34 +132,12 @@ async function sendTelegramNotification(posts: NotifiablePost[]) {
     }
   }
 
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: message,
-      parse_mode: 'MarkdownV2',
-      disable_web_page_preview: true,
-    }),
-  })
+  await postToTelegram(message, { disablePreview: true })
 }
 
 export async function sendTelegramError(errorMessage: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN
-  const chatId = process.env.TELEGRAM_CHAT_ID
-  if (!token || !chatId) return
-
   const message = `❌ *LeadHarvest 掃描失敗*\n錯誤：${escapeTelegramMarkdown(errorMessage)}\n時間：${escapeTelegramMarkdown(new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }))}`
-
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: message,
-      parse_mode: 'MarkdownV2',
-    }),
-  })
+  await postToTelegram(message)
 }
 
 export async function sendNewPostsNotification(posts: NotifiablePost[]) {
