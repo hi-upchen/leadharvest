@@ -18,7 +18,7 @@ interface RedditPostData {
 
 const REDDIT_OAUTH_URL = 'https://oauth.reddit.com'
 const REDDIT_PUBLIC_URL = 'https://www.reddit.com'
-const USER_AGENT = 'RedditMarketingMonitor/1.0 (personal tool)'
+const USER_AGENT = 'LeadHarvest/1.0 (personal tool)'
 const MAX_BODY_CHARS = 2000
 
 // Unified throttle: 1 API call per 4s for all external APIs (Reddit + Gemini)
@@ -50,10 +50,10 @@ async function getScanSettings(): Promise<{ daysBack: number }> {
     )
     if (rows.length) {
       const s = JSON.parse(rows[0].value)
-      return { daysBack: Number(s.daysBack) || 3 }
+      return { daysBack: Number(s.daysBack) || 7 }
     }
   } catch {}
-  return { daysBack: 3 }
+  return { daysBack: 7 }
 }
 
 function sleep(ms: number) {
