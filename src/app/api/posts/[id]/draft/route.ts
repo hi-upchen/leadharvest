@@ -3,15 +3,8 @@ import { query, execute } from '@/lib/db'
 import { generateReplyDraft } from '@/lib/ai'
 import { requireAuth } from '@/lib/auth'
 
-// Preset tones when no user prompt is provided
+// Three reply styles — always used, with or without user prompt
 const PRESET_TONES = ['empathetic-direct', 'shared-journey', 'community-veteran'] as const
-
-// Angle instructions when user provides a prompt (to differentiate 3 outputs)
-const PROMPT_ANGLES = [
-  'Write a concise, direct reply.',
-  'Write a warm, detailed reply.',
-  'Write the reply as a personal experience.',
-] as const
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const denied = await requireAuth(); if (denied) return denied
@@ -50,14 +43,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   const postPayload = { title: post.title, body: post.body, subreddit: post.subreddit }
 
-  // Generate 3 variations in parallel
-  const generationPromises = userPrompt
-    ? PROMPT_ANGLES.map(angle =>
-        generateReplyDraft(productPayload, postPayload, 'default', `${userPrompt}\n${angle}`)
-      )
-    : PRESET_TONES.map(tone =>
-        generateReplyDraft(productPayload, postPayload, tone)
-      )
+  // Generate 3 variations in parallel — always use preset tones, optionally with user guidance
+  const generationPromises = PRESET_TONES.map(tone =>
+    generateReplyDraft(productPayload, postPayload, tone, userPrompt)
+  )
 
   const results = await Promise.allSettled(generationPromises)
   const succeeded = results
