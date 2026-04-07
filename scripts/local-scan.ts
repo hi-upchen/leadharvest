@@ -21,7 +21,7 @@ async function main() {
       `SELECT id, title, subreddit, url, relevance_reason, relevance_tier
        FROM reddit_posts
        WHERE relevance_tier IN ('high', 'medium')
-         AND created_at > datetime('now', '-1 hour')
+         AND fetched_at > datetime('now', '-1 hour')
        ORDER BY relevance_tier ASC, relevance_score DESC`
     )
 
